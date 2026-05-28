@@ -18,8 +18,9 @@ MASTER_PASSWORD = "RIYAD IS BACK"
 OWNER_ID = 6745297891 
 
 os.environ['PYTHONTHREADDEBUG'] = '0'
-user_bot = TeleBot(USER_BOT_TOKEN, num_threads=5) 
-admin_bot = TeleBot(ADMIN_BOT_TOKEN, num_threads=5) 
+# ⚡ SPEED FIX: থ্রেড লিমিট ৫ থেকে বাড়িয়ে ১০০ করা হয়েছে, যেন একসাথে অনেক ইউজার দ্রুত রেসপন্স পায়।
+user_bot = TeleBot(USER_BOT_TOKEN, num_threads=100) 
+admin_bot = TeleBot(ADMIN_BOT_TOKEN, num_threads=100) 
 
 # ░▒▓█ STICKER PAYLOADS █▓▒░
 STICKERS = {
@@ -356,10 +357,10 @@ def user_state_processor(msg):
         user_bot.send_message(uid, f"❌ **𝗛𝗪𝗜𝗗 𝗠𝗜𝗦𝗠𝗔𝗧𝗖𝗛 𝗗𝗘𝗧𝗘𝗖𝗧𝗘𝗗**\n\n► This key is used on another phone.\n► Your ID: `{u['hwid']}`", parse_mode="Markdown")
     elif status == "EXPIRED":
         update_user(uid, waiting=0)
-        user_bot.send_message(uid, "❌ **𝗟𝗜𝗖𝗘𝗡𝗦𝗘 𝗘𝗫評𝗜𝗥𝗘𝗗**", parse_mode="Markdown")
+        user_bot.send_message(uid, "❌ **𝗟𝗜𝗖𝗘𝗡𝗦𝗘 𝗘𝗫𝗣𝗜𝗥𝗘𝗗**", parse_mode="Markdown")
     else:
         update_user(uid, waiting=0)
-        user_bot.send_message(uid, "❌ **𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗦𝗜𝗚𝗡Ａ𝗧𝗨𝗥𝗘**", parse_mode="Markdown")
+        user_bot.send_message(uid, "❌ **𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗦𝗜𝗚𝗡𝗔𝗧𝗨𝗥𝗘**", parse_mode="Markdown")
 
 @user_bot.message_handler(func=lambda msg: get_user(msg.chat.id).get("auth", 0) == 1)
 def user_commands(msg):
@@ -454,14 +455,17 @@ if __name__ == "__main__":
         root_key = gen_key(3650)
         print(f"\n[!] YOUR LIFETIME MASTER KEY: {root_key}")
         
+    # ⚡ ERROR FIX: Webhook রিমুভ এবং ম্যানুয়াল টাইমআউট বাদ দেওয়া হয়েছে
     def run_user():
+        user_bot.remove_webhook()
         while True:
-            try: user_bot.infinity_polling(timeout=20, long_polling_timeout=20)
+            try: user_bot.infinity_polling(skip_pending=True)
             except Exception: time.sleep(1)
             
     def run_admin():
+        admin_bot.remove_webhook()
         while True:
-            try: admin_bot.infinity_polling(timeout=20, long_polling_timeout=20)
+            try: admin_bot.infinity_polling(skip_pending=True)
             except Exception: time.sleep(1)
 
     # Start both bots concurrently using threads
