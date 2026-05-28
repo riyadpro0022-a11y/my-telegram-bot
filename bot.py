@@ -6,6 +6,7 @@ import threading
 import subprocess
 import hashlib
 import sqlite3
+import cloudscraper # ⚡ NEW: Cloudflare Bypass Tool
 from telebot import TeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
@@ -18,7 +19,6 @@ MASTER_PASSWORD = "RIYAD IS BACK"
 OWNER_ID = 6745297891 
 
 os.environ['PYTHONTHREADDEBUG'] = '0'
-# ⚡ SPEED FIX: 100 Threads for ultra-fast response
 user_bot = TeleBot(USER_BOT_TOKEN, num_threads=100) 
 admin_bot = TeleBot(ADMIN_BOT_TOKEN, num_threads=100) 
 
@@ -30,7 +30,7 @@ STICKERS = {
     "stop": "CAACAgUAAxkBAAICm2njivWf31U5OwABHoDpfzCmWJwAATkAAgoYAAJk_NlWVEVQmlEJZMY7BA"
 }
 
-# ░▒▓█ DATABASE VAULT (RAILWAY SAFE STORAGE) █▓▒░
+# ░▒▓█ DATABASE VAULT █▓▒░
 os.makedirs('data', exist_ok=True) 
 conn = sqlite3.connect('data/rdx_aegis.db', check_same_thread=False)
 c = conn.cursor()
@@ -46,26 +46,27 @@ with db_lock:
                   created_by INTEGER, created_at REAL)''')
     conn.commit()
 
-# ░▒▓█ AI PREDICTION ENGINE (SATYAM LOGIC INTEGRATED) █▓▒░
+# ░▒▓█ AI PREDICTION ENGINE (SATYAM LOGIC + CLOUDSCRAPER) █▓▒░
 class LethalAI:
+    def __init__(self):
+        # ⚡ Initialize advanced scraper to bypass Cloudflare
+        self.scraper = cloudscraper.create_scraper()
+
     def fetch(self):
         try:
-            # ⚡ ANTI-BLOCK FIX: Strong Headers to bypass website firewall
             headers = {
                 "User-Agent": "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",
                 "Accept": "application/json, text/plain, */*",
                 "Referer": "https://ar-lottery01.com/",
                 "Connection": "keep-alive"
             }
-            res = requests.get("https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json", timeout=5, headers=headers)
+            # ⚡ Fetching REAL data directly from the server using bypass
+            res = self.scraper.get("https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json", timeout=5, headers=headers)
             data = res.json().get("data", {}).get("list", [])
-            if data: 
-                return data
-            raise Exception("No Data")
-        except: 
-            # ⚡ FALLBACK FIX: If blocked, generate dummy periods so the bot NEVER says "SERVER OFFLINE"
-            fake_period = int(time.time()) 
-            return [{"issueNumber": str(fake_period - (i*10)), "number": str(random.randint(0, 9))} for i in range(10)]
+            return data
+        except Exception as e:
+            # If server genuinely fails, we return empty so the bot waits instead of giving fake periods
+            return []
     
     def bs(self, n): return "SMALL" if int(n) <= 4 else "BIG"
     
@@ -206,7 +207,10 @@ def master_radar_loop():
     while True:
         try:
             data = ai.fetch()
-            if not data: continue
+            if not data: 
+                time.sleep(1)
+                continue
+                
             cp = int(data[0]["issueNumber"])
             
             if last_period and cp != last_period:
@@ -225,7 +229,7 @@ def master_radar_loop():
                     threading.Thread(target=dispatch_auto, args=(uid, cp, data)).start()
                 
             last_period = cp
-            time.sleep(0.5) 
+            time.sleep(1) 
         except:
             time.sleep(1)
 
@@ -385,8 +389,8 @@ def user_commands(msg):
         user_bot.send_chat_action(uid, 'typing')
         data = ai.fetch()
         
-        # ⚡ Safe guard (যদিও এখন fallback আছে, তবুও সেফটি)
-        if not data: return user_bot.send_message(uid, "❌ **SERVER REBOOTING, TRY AGAIN**", parse_mode="Markdown")
+        # ⚡ REAL DATA CHECK: If website is down or blocking, tell user truthfully
+        if not data: return user_bot.send_message(uid, "❌ **SERVER CONNECTING... PLEASE WAIT 2 SECONDS & TRY AGAIN**", parse_mode="Markdown")
         
         cp = int(data[0]["issueNumber"])
         s, n, conf = ai.analyze(data)
@@ -422,6 +426,8 @@ def user_commands(msg):
                 f"*(█ = BIG | ▄ = SMALL)*",
                 parse_mode="Markdown"
             )
+        else:
+             user_bot.send_message(uid, "❌ **SYNCING DATA, TRY AGAIN...**", parse_mode="Markdown")
 
     elif txt == "⚙️ START AUTO":
         if not auto_threads.get(uid):
@@ -460,7 +466,7 @@ if __name__ == "__main__":
     os.system("clear")
     print(f"[{BRANDING}] DUAL SYSTEM ONLINE.")
     print(f"[+] DATABASE LOCK INSTALLED (ERROR FIXED).")
-    print(f"[+] DANGEROUS THEME APPLIED.")
+    print(f"[+] CLOUDSCRAPER BYPASS INJECTED.")
     print(f"[+] 'SATYAM' AI LOGIC INTEGRATED.")
     
     with db_lock:
@@ -495,7 +501,7 @@ if __name__ == "__main__":
     
     @app.route('/')
     def index():
-        return "RDX DUAL SYSTEM IS ALIVE AND RUNNING!"
+        return "RDX DUAL SYSTEM IS ALIVE AND RUNNING WITH CLOUDSCRAPER!"
     
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
