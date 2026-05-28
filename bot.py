@@ -13,7 +13,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 USER_BOT_TOKEN = "8902393080:AAHI505aDZBG2Q8DUhKwVAESIUZ7So9csRM"
 ADMIN_BOT_TOKEN = "8773935483:AAHg8E8Av4kg_ml_-JbHLY8w0cMdQcuXVDs"
 BRANDING = "𝐏𝐑𝐎𝐅𝐄𝐒𝐒𝐎𝐑 ✗"
-OWNER_URL = "https://t.me/RIYAD0140"
+OWNER_URL = "https://t.me/RDX_OWNER_7"
 MASTER_PASSWORD = "RIYAD IS BACK"
 OWNER_ID = 6745297891 
 
@@ -30,10 +30,10 @@ STICKERS = {
 }
 
 # ░▒▓█ DATABASE VAULT (RAILWAY SAFE STORAGE) █▓▒░
-os.makedirs('data', exist_ok=True) # Railway me folder banane ke liye
+os.makedirs('data', exist_ok=True) 
 conn = sqlite3.connect('data/rdx_aegis.db', check_same_thread=False)
 c = conn.cursor()
-db_lock = threading.Lock() # Database Crash Fix
+db_lock = threading.Lock() 
 
 with db_lock:
     c.execute('''CREATE TABLE IF NOT EXISTS users 
@@ -356,10 +356,10 @@ def user_state_processor(msg):
         user_bot.send_message(uid, f"❌ **𝗛𝗪𝗜𝗗 𝗠𝗜𝗦𝗠𝗔𝗧𝗖𝗛 𝗗𝗘𝗧𝗘𝗖𝗧𝗘𝗗**\n\n► This key is used on another phone.\n► Your ID: `{u['hwid']}`", parse_mode="Markdown")
     elif status == "EXPIRED":
         update_user(uid, waiting=0)
-        user_bot.send_message(uid, "❌ **𝗟𝗜𝗖𝗘𝗡𝗦𝗘 𝗘𝗫𝗣𝗜𝗥𝗘𝗗**", parse_mode="Markdown")
+        user_bot.send_message(uid, "❌ **𝗟𝗜𝗖𝗘𝗡𝗦𝗘 𝗘𝗫評𝗜𝗥𝗘𝗗**", parse_mode="Markdown")
     else:
         update_user(uid, waiting=0)
-        user_bot.send_message(uid, "❌ **𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗦𝗜𝗚𝗡𝗔𝗧𝗨𝗥𝗘**", parse_mode="Markdown")
+        user_bot.send_message(uid, "❌ **𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗦𝗜𝗚𝗡Ａ𝗧𝗨𝗥𝗘**", parse_mode="Markdown")
 
 @user_bot.message_handler(func=lambda msg: get_user(msg.chat.id).get("auth", 0) == 1)
 def user_commands(msg):
@@ -468,6 +468,15 @@ if __name__ == "__main__":
     threading.Thread(target=run_user, daemon=True).start()
     threading.Thread(target=run_admin, daemon=True).start()
     
-    # Keep main thread alive
-    while True:
-        time.sleep(1)
+    # ░▒▓█ RENDER FREE TIER PORT FIX (DUMMY WEB SERVER) █▓▒░
+    from flask import Flask
+    import os
+    
+    app = Flask(__name__)
+    
+    @app.route('/')
+    def index():
+        return "RDX DUAL SYSTEM IS ALIVE AND RUNNING!"
+    
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
