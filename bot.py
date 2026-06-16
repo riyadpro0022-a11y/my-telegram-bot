@@ -11,7 +11,7 @@ from threading import Thread
 # ----------------------------------------------------------------
 
 # আপনার বট টোকেন (নিরাপত্তার জন্য লুকিয়ে রাখবেন)
-BOT_TOKEN = "8773935483:AAHFSPEoaXTHePv5un8WnSUKilm8kaVQH1Q"
+BOT_TOKEN = "8634710702:AAFMpmsGSC7JYlcGs8EJfXLTWSp8uD9a89M"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # স্টার্ট কমান্ড (মেইন কীবোর্ডে ৪টি বাটন থাকবে)
