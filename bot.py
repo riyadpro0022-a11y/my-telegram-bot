@@ -4,31 +4,49 @@ import io
 from PIL import Image # স্টিকার PNG তে কনভার্ট করার জন্য
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-# --- নতুন ইম্পোর্ট (resource code + ultra strong obfuscation এর জন্য) ---
+# --- নতুন ইম্পোর্ট ---
 import re
 import zipfile
 import base64
 import zlib
 import bz2
+import lzma
 import marshal
+import hashlib
 import os
 from urllib.parse import urljoin, urlparse
+
+# --- AES-256 এর জন্য (যেকোনো ভাষা সাপোর্ট) ---
+from Crypto.Cipher import AES
+from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Util.Padding import pad
 # ----------------------------------------------------------------
 
-# --- Render-এর জন্য শুধুমাত্র এই ৩টি মডিউল ইম্পোর্ট করা হয়েছে ---
+# --- Render-এর জন্য ---
 from flask import Flask
 from threading import Thread
 # ----------------------------------------------------------------
 
-# আপনার বট টোকেন
 BOT_TOKEN = "8824965090:AAFbKBCuKjLezl0GNvZ1AyCC5OJa7xH9g2A"
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# স্টার্ট কমান্ড (মেইন কীবোর্ডে বাটন থাকবে)
+BROWSER_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+}
+
+# obfuscation এর গোপন পাসফ্রেজ (চাইলে বদলান)
+SECRET_PASSPHRASE = "PROFESSOR_X_ULTRA_SECRET_2024"
+
+
+# স্টার্ট কমান্ড
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    # মেইন বাটন (RESOURCE CODE বাটন বাদ দেওয়া হয়েছে)
     markup.row(KeyboardButton("🔗 𝗟𝗜𝗡𝗞 𝗧𝗢 𝗖𝗢𝗗𝗘"), KeyboardButton("🛡️ 𝗢𝗕𝗙𝗨𝗦𝗖𝗔𝗧𝗜𝗢𝗡"))
     markup.row(KeyboardButton("🆔 STICKER ID"), KeyboardButton("⬇️ STICKER DOWNLOAD"))
 
@@ -39,7 +57,7 @@ def send_welcome(message):
         "<b>YOUR ULTRA-FAST EXTRACTOR & STICKER TOOL IS READY.</b>\n"
         "<b>━━━━━━━━━━━━━━━━━━━━━━━━</b>\n"
         "🔹 <b>TO GET SOURCE CODE:</b> <b>SEND ANY WEBSITE LINK DIRECTLY.</b>\n"
-        "🔹 <b>OBFUSCATION:</b> <b>SEND CODE TO ULTRA-STRONGLY OBFUSCATE IT.</b>\n"
+        "🔹 <b>OBFUSCATION:</b> <b>SEND CODE OR ANY FILE (ANY LANGUAGE) TO ENCRYPT IT.</b>\n"
         "🔹 <b>STICKER ID:</b> <b>GET TELEGRAM STICKER FILE IDs.</b>\n"
         "🔹 <b>STICKER DOWNLOAD:</b> <b>DOWNLOAD ANY STICKER IN PNG.</b>\n"
         "<b>━━━━━━━━━━━━━━━━━━━━━━━━</b>\n"
@@ -55,8 +73,8 @@ def link_instruction(message):
 
 @bot.message_handler(func=lambda m: m.text == "🛡️ 𝗢𝗕𝗙𝗨𝗦𝗖𝗔𝗧𝗜𝗢𝗡")
 def file_instruction(message):
-    msg = bot.reply_to(message, "🛡️ <b>OBFUSCATION ACTIVE:</b>\n<b>Send any Python code now to ultra-strongly obfuscate it.</b>", parse_mode='HTML')
-    bot.register_next_step_handler(msg, process_obfuscation)
+    msg = bot.reply_to(message, "🛡️ <b>OBFUSCATION ACTIVE:</b>\n<b>Send any code or upload ANY file (Python, JS, PHP, etc.) to ultra-strongly encrypt it.</b>", parse_mode='HTML')
+    bot.register_next_step_handler(msg, process_obfuscation_text)
 
 @bot.message_handler(func=lambda m: m.text == "🆔 STICKER ID")
 def sticker_id_instruction(message):
@@ -70,7 +88,7 @@ def sticker_dl_instruction(message):
 
 # ----------------- CORE FUNCTIONS -----------------
 
-# ১. আল্ট্রা-ফাস্ট লিংক প্রসেসিং (resource থাকলে ZIP, না থাকলে শুধু HTML)
+# ১. লিংক প্রসেসিং (resource থাকলে ZIP, না থাকলে শুধু HTML)
 @bot.message_handler(func=lambda message: message.text.startswith("http") or "." in message.text)
 def handle_link(message):
     if message.text in ["🔗 𝗟𝗜𝗡𝗞 𝗧𝗢 𝗖𝗢𝗗𝗘", "🛡️ 𝗢𝗕𝗙𝗨𝗦𝗖𝗔𝗧𝗜𝗢𝗡", "🆔 STICKER ID", "⬇️ STICKER DOWNLOAD"]: return
@@ -83,8 +101,10 @@ def handle_link(message):
     try:
         bot.edit_message_text("🟨🟨⬜⬜", chat_id=message.chat.id, message_id=wait_msg.message_id)
 
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        response = requests.get(url, headers=headers, timeout=10)
+        headers = dict(BROWSER_HEADERS)
+        headers['Referer'] = url
+
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
 
         bot.edit_message_text("🟩🟩🟩⬜", chat_id=message.chat.id, message_id=wait_msg.message_id)
@@ -92,22 +112,19 @@ def handle_link(message):
         source_code = response.text
         domain = url.split("//")[-1].split("/")[0]
 
-        # সব CSS এবং JS লিংক খুঁজে বের করা
         css_links = re.findall(r'<link[^>]+href=["\']([^"\']+\.css[^"\']*)["\']', source_code, re.IGNORECASE)
         js_links = re.findall(r'<script[^>]+src=["\']([^"\']+\.js[^"\']*)["\']', source_code, re.IGNORECASE)
-        all_links = list(dict.fromkeys(css_links + js_links))  # ডুপ্লিকেট বাদ
+        all_links = list(dict.fromkeys(css_links + js_links))
 
-        # ----- যদি resource থাকে: ZIP করে পাঠানো -----
         if all_links:
             zip_stream = io.BytesIO()
             count = 0
             with zipfile.ZipFile(zip_stream, 'w', zipfile.ZIP_DEFLATED) as zf:
-                # মূল HTML টাও ZIP এ রাখা
                 zf.writestr(f"{domain}_original.html", source_code)
                 for link in all_links:
                     full_url = urljoin(url, link)
                     try:
-                        r = requests.get(full_url, headers=headers, timeout=10)
+                        r = requests.get(full_url, headers=headers, timeout=15)
                         if r.status_code == 200:
                             name = os.path.basename(urlparse(full_url).path) or f"file_{count}"
                             if not name.endswith(('.css', '.js')):
@@ -140,7 +157,6 @@ def handle_link(message):
             bot.send_document(message.chat.id, zip_stream, caption=caption_text, parse_mode='HTML')
             bot.delete_message(message.chat.id, wait_msg.message_id)
 
-        # ----- যদি resource না থাকে: শুধু HTML source পাঠানো -----
         else:
             file_name = f"{domain}_original.html"
             file_bytes = source_code.encode('utf-8')
@@ -168,76 +184,196 @@ def handle_link(message):
             bot.send_document(message.chat.id, file_stream, caption=caption_text, parse_mode='HTML')
             bot.delete_message(message.chat.id, wait_msg.message_id)
 
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else "?"
+        if status in (401, 403):
+            err_txt = (
+                f"🚫 <b>ACCESS BLOCKED (Error {status})</b>\n\n"
+                "<b>This website blocks bots/automated requests.</b>\n"
+                "<i>Try another URL, or a site that allows direct fetching.</i>"
+            )
+        else:
+            err_txt = f"❌ <b>HTTP ERROR {status}:</b> <code>{e}</code>"
+        bot.edit_message_text(err_txt, chat_id=message.chat.id, message_id=wait_msg.message_id, parse_mode='HTML')
+
     except requests.exceptions.RequestException as e:
         bot.edit_message_text(f"❌ <b>ERROR:</b> <code>{e}</code>", chat_id=message.chat.id, message_id=wait_msg.message_id, parse_mode='HTML')
 
 
-# ১-বি. ULTRA STRONG OBFUSCATION — Python কোড multi-layer obfuscate করে
-def process_obfuscation(message):
-    if message.text in ["🔗 𝗟𝗜𝗡𝗞 𝗧𝗢 𝗖𝗢𝗗𝗘", "🛡️ 𝗢𝗕𝗙𝗨𝗦𝗖𝗔𝗧𝗜𝗢𝗡", "🆔 STICKER ID", "⬇️ STICKER DOWNLOAD"]:
-        return
+# ============================================================
+#   ULTRA STRONG OBFUSCATION (যেকোনো ভাষা / যেকোনো ফাইল)
+# ============================================================
 
-    code = message.text
-    wait_msg = bot.reply_to(message, "🛡️ <b>Ultra-obfuscating your code...</b>", parse_mode='HTML')
+def _multi_layer_encrypt(raw_bytes):
+    """raw bytes কে multi-layer (compress + AES-256 + XOR + encode) এনক্রিপ্ট করে।"""
+    # ১: triple compression (zlib -> bz2 -> lzma)
+    data = zlib.compress(raw_bytes, 9)
+    data = bz2.compress(data, 9)
+    data = lzma.compress(data)
 
+    # ২: dynamic salt + AES-256 (CBC) — পাসফ্রেজ থেকে কী derive
+    salt = os.urandom(16)
+    aes_key = PBKDF2(SECRET_PASSPHRASE, salt, dkLen=32, count=200000)
+    iv = os.urandom(16)
+    cipher = AES.new(aes_key, AES.MODE_CBC, iv)
+    data = cipher.encrypt(pad(data, AES.block_size))
+
+    # ৩: multi-round XOR (random 64-byte key)
+    xkey = os.urandom(64)
+    data = bytes(b ^ xkey[i % len(xkey)] for i, b in enumerate(data))
+
+    # ৪: base85 encode সব অংশ
+    return {
+        'salt': base64.b85encode(salt).decode(),
+        'iv': base64.b85encode(iv).decode(),
+        'xkey': base64.b85encode(xkey).decode(),
+        'data': base64.b85encode(data).decode(),
+    }
+
+
+def obfuscate_python(code_str):
+    """Python হলে: bytecode + AES multi-layer — self-running .py ফেরত।"""
+    bytecode = marshal.dumps(compile(code_str, "<obf>", "exec"))
+    p = _multi_layer_encrypt(bytecode)
+
+    return (
+        "import marshal,zlib,bz2,lzma,base64\n"
+        "from Crypto.Cipher import AES\n"
+        "from Crypto.Protocol.KDF import PBKDF2\n"
+        "from Crypto.Util.Padding import unpad\n"
+        f"_p={SECRET_PASSPHRASE!r}\n"
+        f"_s=base64.b85decode({p['salt']!r})\n"
+        f"_iv=base64.b85decode({p['iv']!r})\n"
+        f"_xk=base64.b85decode({p['xkey']!r})\n"
+        f"_d=base64.b85decode({p['data']!r})\n"
+        "_d=bytes(b^_xk[i%len(_xk)] for i,b in enumerate(_d))\n"
+        "_k=PBKDF2(_p,_s,dkLen=32,count=200000)\n"
+        "_d=unpad(AES.new(_k,AES.MODE_CBC,_iv).decrypt(_d),16)\n"
+        "_d=lzma.decompress(_d);_d=bz2.decompress(_d);_d=zlib.decompress(_d)\n"
+        "exec(marshal.loads(_d))\n"
+    )
+
+
+def obfuscate_any(raw_bytes, original_name):
+    """যেকোনো ভাষা/ফাইল হলে: AES multi-layer encrypt + Python decryptor সহ ফেরত।"""
+    p = _multi_layer_encrypt(raw_bytes)
+    safe_name = original_name.replace("'", "")
+
+    # self-decrypting Python script যা ডিক্রিপ্ট করে আসল ফাইল ফিরিয়ে দেয়
+    return (
+        "# Run this file with Python to restore the original protected file.\n"
+        "import zlib,bz2,lzma,base64\n"
+        "from Crypto.Cipher import AES\n"
+        "from Crypto.Protocol.KDF import PBKDF2\n"
+        "from Crypto.Util.Padding import unpad\n"
+        f"_p={SECRET_PASSPHRASE!r}\n"
+        f"_name={safe_name!r}\n"
+        f"_s=base64.b85decode({p['salt']!r})\n"
+        f"_iv=base64.b85decode({p['iv']!r})\n"
+        f"_xk=base64.b85decode({p['xkey']!r})\n"
+        f"_d=base64.b85decode({p['data']!r})\n"
+        "_d=bytes(b^_xk[i%len(_xk)] for i,b in enumerate(_d))\n"
+        "_k=PBKDF2(_p,_s,dkLen=32,count=200000)\n"
+        "_d=unpad(AES.new(_k,AES.MODE_CBC,_iv).decrypt(_d),16)\n"
+        "_d=lzma.decompress(_d);_d=bz2.decompress(_d);_d=zlib.decompress(_d)\n"
+        "open('restored_'+_name,'wb').write(_d)\n"
+        "print('Restored ->','restored_'+_name)\n"
+    )
+
+
+def send_obfuscated_text(chat_id, code_str, wait_msg_id=None):
+    """text ইনপুট: Python হলে python-obfuscate, না হলে generic encrypt।"""
     try:
-        # ===== ULTRA STRONG MULTI-LAYER OBFUSCATION =====
-        # ধাপ ১: compile -> marshal (bytecode)
-        layer = marshal.dumps(compile(code, "<obf>", "exec"))
-        # ধাপ ২: zlib compress
-        layer = zlib.compress(layer, 9)
-        # ধাপ ৩: dynamic key দিয়ে multi-round XOR
-        key = os.urandom(32)
-        xored = bytes(b ^ key[i % len(key)] for i, b in enumerate(layer))
-        # ধাপ ৪: bz2 compress
-        layer = bz2.compress(xored, 9)
-        # ধাপ ৫: base85 encode
-        layer = base64.b85encode(layer)
-        k_enc = base64.b85encode(key)
-
-        # স্ব-চালিত (self-running) ultra obfuscated র‍্যাপার তৈরি
-        obfuscated = (
-            "import marshal,zlib,bz2,base64\n"
-            f"_k=base64.b85decode({k_enc!r})\n"
-            f"_d=bz2.decompress(base64.b85decode({layer!r}))\n"
-            "_x=bytes(b^_k[i%len(_k)] for i,b in enumerate(_d))\n"
-            "exec(marshal.loads(zlib.decompress(_x)))\n"
-        )
+        try:
+            obfuscated = obfuscate_python(code_str)  # Python হিসেবে চেষ্টা
+            mode = "PYTHON (Bytecode + AES-256)"
+        except SyntaxError:
+            obfuscated = obfuscate_any(code_str.encode('utf-8'), "code.txt")  # অন্য ভাষা
+            mode = "ANY LANGUAGE (AES-256)"
 
         file_stream = io.BytesIO(obfuscated.encode('utf-8'))
         file_stream.name = "obfuscated_by_Professor.py"
+        _send_obf_doc(chat_id, file_stream, mode, wait_msg_id)
+    except Exception as e:
+        _obf_error(chat_id, e, wait_msg_id)
 
-        caption_text = (
-            "✅ <b>ULTRA STRONG OBFUSCATION COMPLETE!</b>\n\n"
-            "🛡️ <b>5 LAYERS APPLIED:</b>\n"
-            "• 🧬 <b>Marshal Bytecode</b>\n"
-            "• 🗜️ <b>Zlib Compression</b>\n"
-            "• 🔐 <b>Dynamic XOR Cipher</b>\n"
-            "• 📦 <b>BZ2 Compression</b>\n"
-            "• 🧩 <b>Base85 Encoding</b>\n"
-            "<b>━━━━━━━━━━━━━━━━</b>\n"
-            "👑 <b>Powered by 𝐏𝐑𝐎𝐅𝐄𝐒𝐒𝐎𝐑 ✗</b>"
-        )
 
-        bot.send_document(message.chat.id, file_stream, caption=caption_text, parse_mode='HTML')
-        bot.delete_message(message.chat.id, wait_msg.message_id)
+def _send_obf_doc(chat_id, file_stream, mode, wait_msg_id):
+    caption_text = (
+        "✅ <b>ULTRA STRONG ENCRYPTION COMPLETE!</b>\n\n"
+        f"🔧 <b>MODE:</b> <code>{mode}</code>\n"
+        "🛡️ <b>LAYERS APPLIED:</b>\n"
+        "• 🗜️ <b>Zlib + BZ2 + LZMA (Triple Compress)</b>\n"
+        "• 🔐 <b>AES-256 (PBKDF2, 200k rounds)</b>\n"
+        "• 🧬 <b>64-byte Dynamic XOR Cipher</b>\n"
+        "• 🧩 <b>Base85 Multi-Encoding</b>\n"
+        "<b>━━━━━━━━━━━━━━━━</b>\n"
+        "👑 <b>Powered by 𝐏𝐑𝐎𝐅𝐄𝐒𝐒𝐎𝐑 ✗</b>"
+    )
+    bot.send_document(chat_id, file_stream, caption=caption_text, parse_mode='HTML')
+    if wait_msg_id:
+        bot.delete_message(chat_id, wait_msg_id)
+
+
+def _obf_error(chat_id, e, wait_msg_id):
+    err = f"❌ <b>ERROR during obfuscation.</b>\n<code>{e}</code>"
+    if wait_msg_id:
+        bot.edit_message_text(err, chat_id=chat_id, message_id=wait_msg_id, parse_mode='HTML')
+    else:
+        bot.send_message(chat_id, err, parse_mode='HTML')
+
+
+# OBFUSCATION বাটন থেকে আসা ইনপুট হ্যান্ডেল
+def process_obfuscation_text(message):
+    if message.content_type == 'document':
+        handle_document(message)
+        return
+    if not message.text or message.text in ["🔗 𝗟𝗜𝗡𝗞 𝗧𝗢 𝗖𝗢𝗗𝗘", "🛡️ 𝗢𝗕𝗙𝗨𝗦𝗖𝗔𝗧𝗜𝗢𝗡", "🆔 STICKER ID", "⬇️ STICKER DOWNLOAD"]:
+        return
+    wait_msg = bot.reply_to(message, "🛡️ <b>Ultra-encrypting your code...</b>", parse_mode='HTML')
+    send_obfuscated_text(message.chat.id, message.text, wait_msg.message_id)
+
+
+# যেকোনো FILE আপলোড করলেই auto-obfuscate (বাটন না টিপেও, যেকোনো ভাষা)
+@bot.message_handler(content_types=['document'])
+def handle_document(message):
+    wait_msg = bot.reply_to(message, "🛡️ <b>File received! Ultra-encrypting (any language)...</b>", parse_mode='HTML')
+    try:
+        file_info = bot.get_file(message.document.file_id)
+        downloaded = bot.download_file(file_info.file_path)
+        original_name = message.document.file_name or "file.txt"
+
+        # Python ফাইল হলে bytecode obfuscation চেষ্টা, নাহলে generic AES encrypt
+        is_py = original_name.lower().endswith('.py')
+        try:
+            if is_py:
+                obfuscated = obfuscate_python(downloaded.decode('utf-8', errors='strict'))
+                mode = "PYTHON (Bytecode + AES-256)"
+            else:
+                raise SyntaxError  # generic পথে যাওয়ার জন্য
+        except (SyntaxError, UnicodeDecodeError):
+            obfuscated = obfuscate_any(downloaded, original_name)
+            mode = "ANY LANGUAGE (AES-256)"
+
+        file_stream = io.BytesIO(obfuscated.encode('utf-8'))
+        file_stream.name = "obfuscated_by_Professor.py"
+        _send_obf_doc(message.chat.id, file_stream, mode, wait_msg.message_id)
 
     except Exception as e:
-        bot.edit_message_text(f"❌ <b>ERROR: Invalid Python code.</b>\n<code>{e}</code>", chat_id=message.chat.id, message_id=wait_msg.message_id, parse_mode='HTML')
+        _obf_error(message.chat.id, e, wait_msg.message_id)
 
 
-# ২. স্মার্ট স্টিকার সেন্ড করলে ইনলাইন বাটন আসবে
+# ২. স্টিকার সেন্ড করলে ইনলাইন বাটন
 @bot.message_handler(content_types=['sticker'])
 def handle_sticker(message):
     markup = InlineKeyboardMarkup()
     btn_id = InlineKeyboardButton("🆔 GET ID", callback_data="get_id")
     btn_dl = InlineKeyboardButton("⬇️ DOWNLOAD", callback_data="dl_sticker")
     markup.add(btn_id, btn_dl)
-
     bot.reply_to(message, "👾 <b>STICKER DETECTED!</b>\n<b>Choose an option below:</b>", parse_mode='HTML', reply_markup=markup)
 
 
-# ৩. ইনলাইন বাটনের কাজ (ID দেখানো এবং Download করা)
+# ৩. ইনলাইন বাটনের কাজ
 @bot.callback_query_handler(func=lambda call: call.data in ["get_id", "dl_sticker"])
 def sticker_callback(call):
     try:
@@ -248,7 +384,6 @@ def sticker_callback(call):
 
         sticker_id = original_msg.sticker.file_id
 
-        # GET ID এ ট্যাপ করলে
         if call.data == "get_id":
             bot.edit_message_text(f"🆔 <b>STICKER ID:</b>\n\n<code>{sticker_id}</code>\n\n💡 <i>Tap the ID above to copy it!</i>",
                                   chat_id=call.message.chat.id,
@@ -256,7 +391,6 @@ def sticker_callback(call):
                                   parse_mode='HTML')
             bot.answer_callback_query(call.id)
 
-        # DOWNLOAD এ ট্যাপ করলে
         elif call.data == "dl_sticker":
             bot.answer_callback_query(call.id, "Processing your download...")
             bot.edit_message_text("⏳ <b>Downloading & Processing sticker...</b>",
@@ -295,7 +429,7 @@ def sticker_callback(call):
         bot.edit_message_text(f"❌ <b>ERROR:</b> <code>{e}</code>", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='HTML')
 
 
-# ৪. ম্যানুয়াল স্টিকার ডাউনলোডার (যদি কেউ "⬇️ STICKER DOWNLOAD" মেইন বাটনে ক্লিক করে আইডি দেয়)
+# ৪. ম্যানুয়াল স্টিকার ডাউনলোডার
 def process_manual_sticker_download(message):
     if message.text in ["🔗 𝗟𝗜𝗡𝗞 𝗧𝗢 𝗖𝗢𝗗𝗘", "🛡️ 𝗢𝗕𝗙𝗨𝗦𝗖𝗔𝗧𝗜𝗢𝗡", "🆔 STICKER ID", "⬇️ STICKER DOWNLOAD"]:
         return
@@ -306,7 +440,6 @@ def process_manual_sticker_download(message):
     try:
         file_info = bot.get_file(file_id)
         downloaded_file = bot.download_file(file_info.file_path)
-
         file_ext = file_info.file_path.split('.')[-1]
 
         if file_ext.lower() == 'webp':
@@ -336,7 +469,6 @@ def process_manual_sticker_download(message):
 
 
 # ----------------- RENDER DUMMY WEB SERVER -----------------
-# Render-এ পোর্ট ওপেন রাখার জন্য এই অংশটুকু যুক্ত করা হয়েছে
 app = Flask(__name__)
 
 @app.route('/')
@@ -350,6 +482,5 @@ def run_server():
 if __name__ == "__main__":
     server_thread = Thread(target=run_server)
     server_thread.start()
-
     print("SYSTEM READY... WAITING FOR TELEGRAM COMMANDS! 🚀")
     bot.infinity_polling()
