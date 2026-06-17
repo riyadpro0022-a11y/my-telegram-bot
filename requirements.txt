@@ -2,4 +2,3 @@ pyTelegramBotAPI
 requests
 Pillow
 Flask
-pycryptodome
